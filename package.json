@@ -1,0 +1,13 @@
+{
+  "name": "testla-rooster",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A cinematic arcade driving and flying stunt game",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "devDependencies": {"playwright":"1.62.1"}
+}

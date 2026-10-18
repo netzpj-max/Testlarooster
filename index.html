@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#101410" />
+  <meta name="description" content="Testla Rooster — ขับ ดริฟต์ และบินทะลุขีดจำกัด เกมขับรถผาดโผน 3 มิติ" />
+  <title>TESTLA ROOSTER — Flight is a side effect.</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101410'/%3E%3Cpath fill='%23d8ff3e' d='M15 47V33c0-9 7-17 17-17l-4-8 9 3 5-7 3 13 9 7-10 4v19H32V33l-5 7v7z'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
+</head>
+<body>
+  <canvas id="game-canvas" aria-label="สนามขับรถ Testla Rooster สามมิติ"></canvas>
+  <div class="scene-vignette" aria-hidden="true"></div>
+  <div id="ui-root"></div>
+  <div id="loading" class="loading-screen" role="status">
+    <span class="loading-wordmark">TESTLA <b>ROOSTER</b><i>®</i></span>
+    <div class="loading-track"><span></span></div>
+    <p>WAKING THE ROOSTER <span>เตรียมสนามผาดโผน</span></p>
+  </div>
+  <div id="error" class="error-screen" hidden role="alert"></div>
+  <script type="module" src="./src/game.js"></script>
+</body>
+</html>

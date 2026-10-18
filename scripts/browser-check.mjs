@@ -1,0 +1,55 @@
+import {chromium,browserOptions} from './browser-runtime.mjs';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import assert from 'node:assert/strict';
+const out=new URL('../artifacts/',import.meta.url);await mkdir(out,{recursive:true});
+const useHttp=process.argv.includes('--http');
+const testPort=useHttp?4187:4173;
+if(useHttp){process.env.PORT=String(testPort);await import('./serve.mjs');}
+const browser=await chromium.launch(browserOptions());
+const page=await browser.newPage({viewport:{width:1600,height:900},deviceScaleFactor:1});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+const checks=[];const snap=()=>page.evaluate(()=>window.__game.snapshot);
+const capture=async(name,p=page)=>p.screenshot({path:fileURLToPath(new URL(name+'.png',out))});
+const contentTypes={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'};
+// Same-origin local file fixture avoids sandbox loopback restrictions.
+if(!useHttp)await page.route('http://127.0.0.1:4173/**',async route=>{const url=new URL(route.request().url());const name=url.pathname==='/'?'index.html':url.pathname.slice(1);try{const data=await readFile(new URL('../'+name,import.meta.url));await route.fulfill({status:200,contentType:contentTypes['.'+name.split('.').pop()]||'application/octet-stream',body:data});}catch{await route.fulfill({status:404,body:'Not found'});}});
+await page.goto(`http://127.0.0.1:${testPort}/`,{waitUntil:'networkidle'});
+await page.waitForFunction(()=>window.__game?.ready,{timeout:30000});
+await page.waitForTimeout(1800);
+await capture('menu');
+for(const [width,height] of [[1280,720],[1920,1080]]){await page.setViewportSize({width,height});await page.waitForTimeout(150);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const h=await page.locator('.hero-actions').boundingBox(),deck=await page.locator('.chapter-deck').boundingBox();assert.ok(h.y+h.height<deck.y);await capture(`menu-${width}`);checks.push(`desktop layout ${width}x${height}`);}
+await page.setViewportSize({width:1600,height:900});
+await page.locator('[data-level="3"]').click();await page.locator('[data-action="start"]').click();
+assert.equal((await snap()).levelIndex,3);
+await page.keyboard.down('w');
+await page.waitForFunction(()=>window.__game.snapshot.car.airborne&&window.__game.snapshot.car.z< -70,{timeout:15000});
+await capture('flight');
+await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>window.__game.mode),'paused');
+const paused=(await snap()).timeLeft;await page.waitForTimeout(350);assert.equal((await snap()).timeLeft,paused);checks.push('pause freezes simulation clock');
+await page.locator('#pause-modal [data-action="settings"]').click();await page.locator('[data-action="close-settings"]').click();assert.equal(await page.evaluate(()=>window.__game.mode),'paused');
+await page.locator('[data-action="resume"]').click();await page.keyboard.down('w');
+await page.waitForFunction(()=>window.__game.mode==='result',{timeout:20000});await page.keyboard.up('w');
+const flight=await snap();assert.equal(flight.status,'passed');assert.ok(flight.score>=6000);assert.deepEqual(flight.rings,[true,true,true]);assert.ok(flight.objectives.land);checks.push('browser keyboard completes flight stage, rings and stable landing');
+await capture('result');assert.equal(await page.locator('#result-best').textContent(),flight.score.toLocaleString('en-US'));
+await page.locator('#next-button').click();assert.equal((await snap()).levelIndex,4);await page.keyboard.press('Escape');await page.locator('#pause-modal [data-action="menu"]').click();
+await page.locator('[data-level="0"]').click();await page.locator('[data-action="start"]').click();await page.keyboard.down('w');await page.waitForFunction(()=>window.__game.snapshot.elapsed>1.4);
+await page.keyboard.down('b');await page.keyboard.down('a');await page.waitForTimeout(650);await page.keyboard.up('a');await page.keyboard.down('d');await page.waitForTimeout(650);await page.keyboard.up('d');await page.keyboard.up('b');
+assert.equal((await snap()).objectives.drift,true);checks.push('browser handbrake steering triggers drift objective');
+await page.keyboard.up('w');await page.keyboard.press('Escape');await page.locator('#pause-modal [data-action="menu"]').click();
+await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click();await page.locator('#setting-quality').selectOption('low');await page.locator('#setting-sound').uncheck();await page.locator('[data-action="close-settings"]').click();
+await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>window.__game?.ready);await page.getByRole('button',{name:'ตั้งค่า',exact:true}).click();assert.equal(await page.locator('#setting-quality').inputValue(),'low');assert.equal(await page.locator('#setting-sound').isChecked(),false);await page.locator('[data-action="close-settings"]').click();checks.push('settings persist across reload');
+const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:1});const mobile=await context.newPage();mobile.on('pageerror',e=>errors.push(e.message));
+// Mobile requests use the actual server in --http mode.
+if(!useHttp)await mobile.route('http://127.0.0.1:4173/**',async route=>{const url=new URL(route.request().url()),name=url.pathname==='/'?'index.html':url.pathname.slice(1);try{await route.fulfill({status:200,contentType:contentTypes['.'+name.split('.').pop()]||'application/octet-stream',body:await readFile(new URL('../'+name,import.meta.url))});}catch{await route.fulfill({status:404,body:'Not found'});}});
+await mobile.goto(`http://127.0.0.1:${testPort}/`,{waitUntil:'networkidle'});await mobile.waitForFunction(()=>window.__game?.ready);await mobile.waitForTimeout(300);await capture('mobile-menu',mobile);
+await mobile.locator('[data-action="start"]').click();assert.equal(await mobile.locator('.touch-controls').isVisible(),true);await capture('mobile-game',mobile);
+const throttle=mobile.locator('[data-touch="throttle:1"]');let rect=await throttle.boundingBox();await mobile.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await mobile.mouse.down();await mobile.waitForTimeout(600);await mobile.mouse.up();assert.ok((await mobile.evaluate(()=>window.__game.snapshot.car.z))<54);checks.push('portrait mobile touch throttle moves actual vehicle');
+await mobile.setViewportSize({width:844,height:390});await mobile.waitForTimeout(200);assert.equal(await mobile.locator('.touch-controls').isVisible(),true);assert.equal(await mobile.locator('[data-touch="reset:1"]').isVisible(),true);assert.equal(await mobile.locator('[data-touch="throttle:-1"]').isVisible(),true);await capture('mobile-landscape',mobile);checks.push('landscape mobile controls including reset and reverse stay visible');
+await context.close();
+assert.deepEqual(errors,[]);
+const report={timestamp:new Date().toISOString(),transport:useHttp?'actual HTTP server':'same-origin file fixtures',checks,flightResult:{score:flight.score,status:flight.status,objectives:flight.objectives},stats:await page.evaluate(()=>window.__game.stats),errors,limits:['Headless browser measurements do not certify FPS on a physical gaming PC or phone.','Gamepad mapping implemented; physical controller not connected during QA.','Generated audio graph checked without a listening test.']};
+console.log(JSON.stringify(report,null,2));
+await writeFile(new URL('browser-report.json',out),JSON.stringify(report,null,2));
+await browser.close();
+if(useHttp)process.exit(0);
